@@ -8,7 +8,7 @@ defmodule DistributedSupervisor.MixProject do
     [
       app: @app,
       version: @version,
-      elixir: "~> 1.17",
+      elixir: "~> 1.14",
       compilers: compilers(Mix.env()),
       elixirc_paths: elixirc_paths(Mix.env()),
       consolidate_protocols: Mix.env() not in [:dev, :test],
