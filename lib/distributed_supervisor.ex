@@ -36,8 +36,7 @@ defmodule DistributedSupervisor do
   - required option
     - `name :: DistributedSupervisor.name()` the name of the supervisor to be used in lookups etc
   """
-  # @spec start_link(opts :: Supervisor.option() | Supervisor.init_option()) ::
-  #         Supervisor.on_start()
+  # @spec start_link(Supervisor.option() | Supervisor.init_option()) :: Supervisor.on_start()
   def start_link(opts \\ []) do
     name = Keyword.fetch!(opts, :name)
     Supervisor.start_link(__MODULE__, {name, opts}, name: name)
@@ -47,8 +46,21 @@ defmodule DistributedSupervisor do
   @doc false
   def init({name, opts}) do
     children = [
-      %{id: :pg, start: {__MODULE__, :start_pg, [name]}},
-      {DistributedSupervisor.Registry, opts},
+      %{
+        id: __MODULE__.Supervisor,
+        start:
+          {Supervisor, :start_link,
+           [
+             [
+               %{id: :pg, start: {__MODULE__, :start_pg, [name]}},
+               %{
+                 id: __MODULE__.Registry,
+                 start: {DistributedSupervisor.Registry, :start_link, [opts]}
+               }
+             ],
+             [strategy: :rest_for_one]
+           ]}
+      },
       {DynamicSupervisor,
        name: dynamic_supervisor_name(name),
        strategy: :one_for_one,
@@ -98,8 +110,11 @@ defmodule DistributedSupervisor do
     |> add_name_to_result(child_name)
   end
 
-  def start_child(name, {mod, opts}),
+  def start_child(name, {mod, opts}) when is_atom(mod),
     do: start_child(name, %{id: Keyword.get(opts, name), start: {mod, :start_link, opts}})
+
+  def start_child(name, mod) when is_atom(mod),
+    do: start_child(name, {mod, []})
 
   @doc """
   Returns a map with registered names as keys and pids as values for the instance of the
