@@ -46,6 +46,7 @@ defmodule DistributedSupervisor do
   @doc false
   def init({name, opts}) do
     children = [
+      {__MODULE__.Notifier, name: notifier_name(name)},
       %{
         id: __MODULE__.Supervisor,
         start:
@@ -55,7 +56,7 @@ defmodule DistributedSupervisor do
                %{id: :pg, start: {__MODULE__, :start_pg, [name]}},
                %{
                  id: __MODULE__.Registry,
-                 start: {DistributedSupervisor.Registry, :start_link, [opts]}
+                 start: {__MODULE__.Registry, :start_link, [opts]}
                }
              ],
              [strategy: :rest_for_one]
@@ -70,10 +71,6 @@ defmodule DistributedSupervisor do
 
     Supervisor.init(children, Keyword.put_new(opts, :strategy, :one_for_one))
   end
-
-  @doc false
-  @spec dynamic_supervisor_name(module()) :: module()
-  def dynamic_supervisor_name(name), do: Module.concat(name, DynamicSupervisor)
 
   @doc """
   Dynamically adds a child specification to supervisor and starts that child.
@@ -173,8 +170,16 @@ defmodule DistributedSupervisor do
   def scope(name), do: Module.concat(name, Scope)
 
   @doc false
+  @spec dynamic_supervisor_name(module()) :: module()
+  def dynamic_supervisor_name(name), do: Module.concat(name, DynamicSupervisor)
+
+  @doc false
   @spec registry_name(module()) :: module()
   def registry_name(name), do: Module.concat(name, Registry)
+
+  @doc false
+  @spec notifier_name(module()) :: module()
+  def notifier_name(name), do: Module.concat(name, Notifier)
 
   @spec patch_opts(module(), keyword()) :: {keyword(), term()}
   defp patch_opts(name, opts) do

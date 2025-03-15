@@ -60,12 +60,9 @@ defmodule DistributedSupervisor.Registry do
       |> Map.get(:nodes, [node() | Node.list()])
       |> then(&HashRing.add_nodes(HashRing.new(), &1))
 
-    state =
-      opts
-      |> Map.put(:scope, scope)
-      |> Map.put(:ref, ref)
-      |> Map.put(:children, %{})
-      |> Map.put(:ring, ring)
+    listeners = opts |> Map.get(:listeners, []) |> List.wrap()
+
+    state = %{name: name, scope: scope, listeners: listeners, ref: ref, children: %{}, ring: ring}
 
     {:ok, state}
   end
@@ -76,6 +73,7 @@ defmodule DistributedSupervisor.Registry do
       "[🗒️] #{inspect(pid)} process joined group #{inspect(group)}, state: #{inspect(state)}"
     )
 
+    maybe_notify_listeners(:join, state.listeners, state.name, group, pid)
     {:noreply, put_in(state, [:children, group], pid)}
   end
 
@@ -84,6 +82,7 @@ defmodule DistributedSupervisor.Registry do
       "[🗒️] #{inspect(pids)} processes left group #{inspect(group)}, state: #{inspect(state)}"
     )
 
+    maybe_notify_listeners(:leave, state.listeners, state.name, group, pids)
     {:noreply, %{state | children: Map.delete(state.children, group)}}
   end
 
@@ -113,5 +112,14 @@ defmodule DistributedSupervisor.Registry do
       [_ | _] ->
         :unsupported
     end
+  end
+
+  def maybe_notify_listeners(_, [], _, _, _), do: :ok
+
+  def maybe_notify_listeners(join_or_leave, listeners, name, id, pid)
+      when join_or_leave in [:join, :leave] do
+    name
+    |> DistributedSupervisor.notifier_name()
+    |> GenServer.cast({join_or_leave, listeners, name, id, pid})
   end
 end
