@@ -9,54 +9,47 @@ defmodule DistributedSupervisor.Notifier do
   @impl GenServer
   def init(nil), do: {:ok, %{}}
 
+  defguardp is_local(pid) when node(pid) == node()
+
   @impl GenServer
-  def handle_cast({:join, listeners, name, id, pid}, state) do
-    Enum.each(listeners, fn mod_pattern ->
-      {listener, callback?, notify?} =
-        case mod_pattern do
-          {mod, pattern} ->
-            {source, pattern} = {inspect(id), inspect(pattern)}
+  def handle_cast({:join, listeners, name, id, pid}, state) when is_local(pid) do
+    Enum.each(listeners, fn listener ->
+      {listener, notify?} = parse_listener(listener, id)
+      notify? = notify? and function_exported?(listener, :on_process_start, 3)
 
-            {mod, function_exported?(mod, :on_process_start, 3),
-             String.starts_with?(source, pattern)}
-
-          mod ->
-            {mod, function_exported?(mod, :on_process_start, 3), true}
-        end
-
-      maybe_notify_join(callback?, notify?, listener, name, id, pid)
+      maybe_notify_join(notify?, listener, name, id, pid)
     end)
 
     {:noreply, state}
   end
 
-  def handle_cast({:leave, listeners, name, id, pid}, state) do
-    Enum.each(listeners, fn mod_pattern ->
-      {listener, callback?, notify?} =
-        case mod_pattern do
-          {mod, pattern} ->
-            {source, pattern} = {inspect(id), inspect(pattern)}
+  def handle_cast({:leave, listeners, name, id, pid}, state) when is_local(pid) do
+    Enum.each(listeners, fn listener ->
+      {listener, notify?} = parse_listener(listener, id)
+      notify? = notify? and function_exported?(listener, :on_process_stop, 3)
 
-            {mod, function_exported?(mod, :on_process_stop, 3),
-             String.starts_with?(source, pattern)}
-
-          mod ->
-            {mod, function_exported?(mod, :on_process_stop, 3), true}
-        end
-
-      maybe_notify_leave(callback?, notify?, listener, name, id, pid)
+      maybe_notify_leave(notify?, listener, name, id, pid)
     end)
 
     {:noreply, state}
   end
 
-  defp maybe_notify_join(true, true, listener, name, id, pid),
+  def handle_cast(_, state), do: {:noreply, state}
+
+  defp parse_listener({listener, pattern}, id) do
+    {source, pattern} = {inspect(id), inspect(pattern)}
+    {listener, String.starts_with?(source, pattern)}
+  end
+
+  defp parse_listener(listener, _id), do: {listener, true}
+
+  defp maybe_notify_join(true, listener, name, id, pid),
     do: listener.on_process_start(name, id, pid)
 
-  defp maybe_notify_join(_, _, _, _, _, _), do: :ok
+  defp maybe_notify_join(_, _, _, _, _), do: :ok
 
-  defp maybe_notify_leave(true, true, listener, name, id, pid),
+  defp maybe_notify_leave(true, listener, name, id, pid),
     do: listener.on_process_stop(name, id, pid)
 
-  defp maybe_notify_leave(_, _, _, _, _, _), do: :ok
+  defp maybe_notify_leave(_, _, _, _, _), do: :ok
 end
