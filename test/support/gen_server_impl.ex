@@ -16,6 +16,7 @@ defmodule DistributedSupervisor.Test.GenServer do
   @impl true
   def handle_cast(:inc, state), do: {:noreply, state + 1}
   def handle_cast(:raise, _state), do: raise("boom")
+  def handle_cast(:shutdown, state), do: {:stop, :normal, state}
 end
 
 defmodule DistributedSupervisor.Test.Listener do

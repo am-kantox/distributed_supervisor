@@ -87,11 +87,15 @@ defmodule DistributedSupervisor do
 
   _See:_ `DynamicSupervisor.start_child/2`
   """
-  @spec start_child(module(), Supervisor.child_spec() | {module(), term()}) ::
+  @spec start_child(name(), Supervisor.child_spec() | {module(), term()}) ::
           DynamicSupervisor.on_start_child()
   def start_child(name, %{id: _, start: {mod, fun, opts}} = spec) do
-    {opts, child_name} = patch_opts(name, opts)
-    spec = %{spec | start: {mod, fun, [opts]}}
+    {opts, gs_opts, child_name} = patch_opts(name, opts)
+
+    spec =
+      spec
+      |> Map.put(:start, {mod, fun, [opts]})
+      |> Map.merge(gs_opts)
 
     me = node()
 
@@ -117,7 +121,7 @@ defmodule DistributedSupervisor do
   Returns a map with registered names as keys and pids as values for the instance of the
     registry with a name `name`.
   """
-  @spec children(module()) :: %{optional(term()) => pid()}
+  @spec children(name()) :: %{optional(term()) => pid()}
   def children(name) do
     name
     |> registry_name()
@@ -130,32 +134,39 @@ defmodule DistributedSupervisor do
 
   _See:_ `DistributedSupervisor.children/1`
   """
-  @spec whereis(module(), term()) :: pid() | nil
+  @spec whereis(name(), id()) :: pid() | nil
   def whereis(name, child), do: DistributedSupervisor.Registry.whereis_name({name, child})
 
   @doc """
   A syntactic sugar for `GenServer.call/2` allowing to call a dynamically supervised
     `GenServer` by registry name and key.
   """
-  @spec call(module(), term(), msg) :: result when msg: term(), result: term()
+  @spec call(name(), id(), msg) :: result when msg: term(), result: term()
   def call(name, child, msg),
-    do: GenServer.call({:via, DistributedSupervisor.Registry, {name, child}}, msg)
+    do: name |> via_name(child) |> GenServer.call(msg)
 
   @doc """
   A syntactic sugar for `GenServer.cast/2` allowing to call a dynamically supervised
     `GenServer` by registry name and key.
   """
-  @spec cast(module(), term(), msg) :: :ok when msg: term()
+  @spec cast(name(), id(), msg) :: :ok when msg: term()
   def cast(name, child, msg),
-    do: GenServer.cast({:via, DistributedSupervisor.Registry, {name, child}}, msg)
+    do: name |> via_name(child) |> GenServer.cast(msg)
 
   @doc """
   A syntactic sugar for `Kernel.send/2` allowing to send a message to
      a dynamically supervised `GenServer` identified by registry name and key.
   """
-  @spec send(module(), term(), msg) :: msg | nil when msg: term()
+  @spec send(name(), id(), msg) :: msg | nil when msg: term()
   def send(name, child, msg),
     do: with(pid when is_pid(pid) <- whereis(name, child), do: send(pid, msg))
+
+  @doc """
+  Returns a fully qualified name to use with a standard library functions,
+    accepting `{:via, Registry, key}` as a `GenServer` name.
+  """
+  @spec via_name(name(), id()) :: {:via, module(), {name(), id()}}
+  def via_name(name, id), do: {:via, DistributedSupervisor.Registry, {name, id}}
 
   #############################################################################
 
@@ -181,7 +192,15 @@ defmodule DistributedSupervisor do
   @spec notifier_name(module()) :: module()
   def notifier_name(name), do: Module.concat(name, Notifier)
 
-  @spec patch_opts(module(), keyword()) :: {keyword(), term()}
+  @spec patch_opts(module(), keyword()) ::
+          {keyword(),
+           %{
+             optional(:restart) => Supervisor.restart(),
+             optional(:shutdown) => Supervisor.shutdown(),
+             optional(:type) => Supervisor.type(),
+             optional(:modules) => [module()] | :dynamic,
+             optional(:significant) => boolean()
+           }, term()}
   defp patch_opts(name, opts) do
     child_name =
       case Keyword.fetch(opts, :name) do
@@ -189,12 +208,13 @@ defmodule DistributedSupervisor do
         :error -> make_ref()
       end
 
-    opts =
+    {gs_opts, opts} =
       opts
-      |> Keyword.put(:name, {:via, DistributedSupervisor.Registry, {name, child_name}})
+      |> Keyword.put(:name, via_name(name, child_name))
       |> Keyword.put_new(:restart, :permanent)
+      |> Keyword.split([:restart, :shutdown, :type, :modules, :significant])
 
-    {opts, child_name}
+    {opts, Map.new(gs_opts), child_name}
   end
 
   @spec add_name_to_result(DynamicSupervisor.on_start_child(), term()) ::

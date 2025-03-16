@@ -16,7 +16,20 @@ defmodule DistributedSupervisorTest do
     pid = self()
     assert {{^pid, [:alias | ref]}, 3} = DistributedSupervisor.call(DS1, MyGS_1, :state)
     assert is_reference(ref)
+  end
 
-    Process.sleep(1_000)
+  test "allows child shutdown when `restart: :transient` is passed" do
+    start_supervised!(
+      {DistributedSupervisor, name: DS2, listeners: DistributedSupervisor.Test.Listener}
+    )
+
+    assert {:ok, _pid, MyGS_2} =
+             DistributedSupervisor.start_child(DS2, {MyGS, name: MyGS_2, restart: :transient})
+
+    assert %{MyGS_2 => _} = DistributedSupervisor.children(DS2)
+    assert :ok == DistributedSupervisor.cast(DS2, MyGS_2, :shutdown)
+    Process.sleep(100)
+    assert %{} == DistributedSupervisor.children(DS2)
+    refute DS2 |> DistributedSupervisor.whereis(MyGS2) |> GenServer.whereis()
   end
 end

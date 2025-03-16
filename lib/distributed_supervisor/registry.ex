@@ -61,10 +61,7 @@ defmodule DistributedSupervisor.Registry do
       |> then(&HashRing.add_nodes(HashRing.new(), &1))
 
     listeners =
-      opts
-      |> Map.get(:listeners, [])
-      |> List.wrap()
-      |> tap(fn listeners -> Enum.each(listeners, &Code.ensure_loaded?/1) end)
+      opts |> Map.get(:listeners, []) |> List.wrap() |> Enum.filter(&Code.ensure_loaded?/1)
 
     state = %{name: name, scope: scope, listeners: listeners, ref: ref, children: %{}, ring: ring}
 
