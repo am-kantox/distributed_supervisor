@@ -87,7 +87,10 @@ defmodule DistributedSupervisor.Registry do
     )
 
     maybe_notify_listeners(:join, state.listeners, state.name, group, pid)
-    state = with %{children: %{}} <- state, do: put_in(state, [:children, group], pid)
+
+    state =
+      with %{children: %{}} <- state, do: put_in(state, [:children, group], pid)
+
     {:noreply, state}
   end
 
@@ -97,7 +100,10 @@ defmodule DistributedSupervisor.Registry do
     )
 
     maybe_notify_listeners(:leave, state.listeners, state.name, group, pids)
-    state = with %{children: %{}} <- state, do: Map.delete(state.children, group)
+
+    state =
+      with %{children: %{}} <- state, do: %{state | children: Map.delete(state.children, group)}
+
     {:noreply, state}
   end
 

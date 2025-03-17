@@ -171,12 +171,13 @@ defmodule DistributedSupervisor do
           %{optional(term()) => pid()}
           | [{:undefined, pid() | :restarting, :worker | :supervisor, [module()] | :dynamic}]
   def children(name) do
-    %{children: children, ring: ring} =
-      name
-      |> registry_name()
-      |> :sys.get_state()
-
-    with nil <- children, do: which_children(name, HashRing.nodes(ring))
+    name
+    |> registry_name()
+    |> :sys.get_state()
+    |> case do
+      %{children: children} when not is_nil(children) -> children
+      %{ring: ring} -> which_children(name, HashRing.nodes(ring))
+    end
   end
 
   @doc """

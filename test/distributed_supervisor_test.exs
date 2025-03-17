@@ -10,6 +10,7 @@ defmodule DistributedSupervisorTest do
     )
 
     assert {:ok, _pid, MyGS_1} = DistributedSupervisor.start_child(DS1, {MyGS, name: MyGS_1})
+    assert [{_, _, _, _}] = DistributedSupervisor.children(DS1)
     assert :ok == DistributedSupervisor.cast(DS1, MyGS_1, :inc)
     assert :ok == DistributedSupervisor.cast(DS1, MyGS_1, :inc)
     assert :ok == DistributedSupervisor.cast(DS1, MyGS_1, :inc)
@@ -20,7 +21,8 @@ defmodule DistributedSupervisorTest do
 
   test "allows child shutdown when `restart: :transient` is passed" do
     start_supervised!(
-      {DistributedSupervisor, name: DS2, listeners: DistributedSupervisor.Test.Listener}
+      {DistributedSupervisor,
+       name: DS2, listeners: DistributedSupervisor.Test.Listener, cache_children?: true}
     )
 
     assert {:ok, _pid, MyGS_2} =
