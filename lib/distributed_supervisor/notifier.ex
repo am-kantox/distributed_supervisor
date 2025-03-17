@@ -34,6 +34,28 @@ defmodule DistributedSupervisor.Notifier do
     {:noreply, state}
   end
 
+  def handle_cast({:nodeup, [_ | _] = listeners, name, node, info}, state) do
+    Enum.each(listeners, fn listener ->
+      {listener, _notify?} = parse_listener(listener, "")
+      notify? = function_exported?(listener, :on_node_up, 3)
+
+      maybe_notify_up(notify?, listener, name, node, info)
+    end)
+
+    {:noreply, state}
+  end
+
+  def handle_cast({:nodedown, [_ | _] = listeners, name, node, info}, state) do
+    Enum.each(listeners, fn listener ->
+      {listener, _notify?} = parse_listener(listener, "")
+      notify? = function_exported?(listener, :on_node_down, 3)
+
+      maybe_notify_down(notify?, listener, name, node, info)
+    end)
+
+    {:noreply, state}
+  end
+
   def handle_cast(_, state), do: {:noreply, state}
 
   defp parse_listener({listener, pattern}, id) do
@@ -52,4 +74,14 @@ defmodule DistributedSupervisor.Notifier do
     do: listener.on_process_stop(name, id, pid)
 
   defp maybe_notify_leave(_, _, _, _, _), do: :ok
+
+  defp maybe_notify_up(true, listener, name, node, info),
+    do: listener.on_node_up(name, node, info)
+
+  defp maybe_notify_up(_, _, _, _, _), do: :ok
+
+  defp maybe_notify_down(true, listener, name, node, info),
+    do: listener.on_node_down(name, node, info)
+
+  defp maybe_notify_down(_, _, _, _, _), do: :ok
 end

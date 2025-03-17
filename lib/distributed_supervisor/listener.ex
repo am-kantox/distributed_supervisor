@@ -17,5 +17,17 @@ defmodule DistributedSupervisor.Listener do
               pids :: [pid()]
             ) :: :ok
 
-  @optional_callbacks on_process_start: 3, on_process_stop: 3
+  @callback on_node_up(
+              name :: DistributedSupervisor.name(),
+              node :: node(),
+              info :: map() | keyword()
+            ) :: :ok
+
+  @callback on_node_down(
+              name :: DistributedSupervisor.name(),
+              node :: node(),
+              info :: map() | keyword()
+            ) :: :ok
+
+  @optional_callbacks on_process_start: 3, on_process_stop: 3, on_node_up: 3, on_node_down: 3
 end

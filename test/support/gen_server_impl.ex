@@ -35,4 +35,14 @@ defmodule DistributedSupervisor.Test.Listener do
   def on_process_stop(name, id, pid) do
     Logger.warning("✗ stopping: " <> inspect(name: name, id: id, pid: pid))
   end
+
+  @impl true
+  def on_node_up(name, node, info) do
+    Logger.info("✓ node up: " <> inspect(name: name, node: node, info: info))
+  end
+
+  @impl true
+  def on_node_down(name, node, info) do
+    Logger.info("✗ node down: " <> inspect(name: name, node: node, info: info))
+  end
 end

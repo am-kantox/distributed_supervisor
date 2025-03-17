@@ -57,6 +57,8 @@ defmodule DistributedSupervisor.Registry do
     {ref, pids} = :pg.monitor_scope(scope)
     Enum.each(pids, &Process.exit(&1, :restart))
 
+    opts |> Map.fetch!(:monitor_nodes) |> do_monitor_nodes()
+
     ring =
       opts
       |> Map.fetch!(:nodes)
@@ -64,6 +66,7 @@ defmodule DistributedSupervisor.Registry do
       |> then(&HashRing.add_nodes(HashRing.new(), &1))
 
     cache_children? = Map.fetch!(opts, :cache_children?)
+    # https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-1
 
     listeners =
       opts |> Map.fetch!(:listeners) |> List.wrap() |> Enum.filter(&Code.ensure_loaded?/1)
@@ -81,11 +84,20 @@ defmodule DistributedSupervisor.Registry do
   end
 
   @impl GenServer
-  def handle_info({ref, :join, group, [pid]}, %{ref: ref} = state) do
-    Logger.debug(
-      "[🗒️] #{inspect(pid)} process joined group #{inspect(group)}, state: #{inspect(state)}"
-    )
+  def handle_info({:nodeup, node, info}, %{ring: ring} = state) do
+    Logger.debug("[🗒️] #{inspect(node)} node joined the cluster #{inspect(state.name)}")
+    maybe_notify_listeners(:nodeup, state.listeners, state.name, node, info)
+    {:noreply, %{state | ring: HashRing.add_node(ring, node)}}
+  end
 
+  def handle_info({:nodedown, node, info}, %{ring: ring} = state) do
+    Logger.debug("[🗒️] #{inspect(node)} node left the cluster #{inspect(state.name)}")
+    maybe_notify_listeners(:nodedown, state.listeners, state.name, node, info)
+    {:noreply, %{state | ring: HashRing.remove_node(ring, node)}}
+  end
+
+  def handle_info({ref, :join, group, [pid]}, %{ref: ref} = state) do
+    Logger.debug("[🗒️] #{inspect(pid)} process joined group #{inspect(group)}")
     maybe_notify_listeners(:join, state.listeners, state.name, group, pid)
 
     state =
@@ -95,10 +107,7 @@ defmodule DistributedSupervisor.Registry do
   end
 
   def handle_info({ref, :leave, group, pids}, %{ref: ref} = state) do
-    Logger.debug(
-      "[🗒️] #{inspect(pids)} processes left group #{inspect(group)}, state: #{inspect(state)}"
-    )
-
+    Logger.debug("[🗒️] #{inspect(pids)} processes left group #{inspect(group)}")
     maybe_notify_listeners(:leave, state.listeners, state.name, group, pids)
 
     state =
@@ -110,6 +119,10 @@ defmodule DistributedSupervisor.Registry do
   @impl GenServer
   def handle_call({:node_for, key}, _from, %{ring: ring} = state),
     do: {:reply, HashRing.key_to_node(ring, key), state}
+
+  @impl GenServer
+  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state),
+    do: {:reply, %{state | ring: HashRing.add_nodes(ring, List.wrap(nodes))}}
 
   #############################################################################
 
@@ -143,4 +156,15 @@ defmodule DistributedSupervisor.Registry do
     |> DistributedSupervisor.notifier_name()
     |> GenServer.cast({join_or_leave, listeners, name, id, pid})
   end
+
+  def maybe_notify_listeners(up_or_down, listeners, name, node, info)
+      when up_or_down in [:nodeup, :nodedown] do
+    name
+    |> DistributedSupervisor.notifier_name()
+    |> GenServer.cast({up_or_down, listeners, name, node, info})
+  end
+
+  defp do_monitor_nodes(false), do: :ok
+  defp do_monitor_nodes(true), do: do_monitor_nodes(:all)
+  defp do_monitor_nodes(kind), do: :net_kernel.monitor_nodes(true, node_type: kind)
 end

@@ -50,6 +50,13 @@ defmodule DistributedSupervisor do
       doc:
         "The hardcoded list of nodes to spread children across, if not passed, all connected nodes will be used"
     ],
+    monitor_nodes: [
+      required: false,
+      type: :atom,
+      default: false,
+      doc:
+        "If not false, the `HashRing` will be automatically updated when nodes are changed in the cluster"
+    ],
     listeners: [
       required: false,
       default: [],
