@@ -6,7 +6,7 @@ defmodule DistributedSupervisor do
   ### Example
 
   ```elixir
-  iex|🌢|n1@am|1> DistributedSupervisor.start_link(name: DS)
+  iex|🌢|n1@am|1> DistributedSupervisor.start_link(name: DS, cache_children?: true)
   {:ok, #PID<0.307.0>}
   iex|🌢|n1@am|2> DistributedSupervisor.start_child(DS, {MyGenServer, name: MGS})
   {:ok, #PID<0.311.0>, MGS}
@@ -30,11 +30,52 @@ defmodule DistributedSupervisor do
   """
   @type id :: term()
 
+  schema = [
+    name: [
+      required: true,
+      type: :atom,
+      doc:
+        "The unique `ID` of this _DistributedSupervisor_, that will be used to address it, similar to `DynamicSupervisor.name()`"
+    ],
+    cache_children?: [
+      required: false,
+      type: :boolean,
+      default: false,
+      doc: "If `true`, `Registry` will cache children as a map of `%{name => pid()}`"
+    ],
+    nodes: [
+      required: false,
+      type: :atom,
+      default: nil,
+      doc:
+        "The hardcoded list of nodes to spread children across, if not passed, all connected nodes will be used"
+    ],
+    listeners: [
+      required: false,
+      default: [],
+      type:
+        {:or,
+         [
+           {:custom, NimbleOptionsEx, :behaviour, [DistributedSupervisor.Listener]},
+           {:list, {:custom, NimbleOptionsEx, :behaviour, [DistributedSupervisor.Listener]}}
+         ]},
+      doc:
+        "The implementation of `DistributedSupervisor.Listener` to receive notifications upon process restarts"
+    ]
+  ]
+
+  @schema NimbleOptions.new!(schema)
+
+  @doc false
+  def schema, do: @schema
+
   @doc """
   Starts the `DistributedSupervisor`.
 
-  - required option
-    - `name :: DistributedSupervisor.name()` the name of the supervisor to be used in lookups etc
+  ### Options to `DistributedSupervisor.start_link/1`
+
+  #{NimbleOptions.docs(@schema)}
+
   """
   # @spec start_link(Supervisor.option() | Supervisor.init_option()) :: Supervisor.on_start()
   def start_link(opts \\ []) do
@@ -85,11 +126,16 @@ defmodule DistributedSupervisor do
   If `name` option is not passed, it gets assigned randomly and returned in the third
     element of the tuple from `start_child/2`.
 
+  This function accepts an optional third argument `node`. If it’s passed, the process
+    will be started on that node; the node will be chosed according to a keyring otherwise.
+
   _See:_ `DynamicSupervisor.start_child/2`
   """
-  @spec start_child(name(), Supervisor.child_spec() | {module(), term()}) ::
+  @spec start_child(name(), Supervisor.child_spec() | {module(), term()}, node() | nil) ::
           DynamicSupervisor.on_start_child()
-  def start_child(name, %{id: _, start: {mod, fun, opts}} = spec) do
+  def start_child(name, spec, node \\ nil)
+
+  def start_child(name, %{id: _, start: {mod, fun, opts}} = spec, node) do
     {opts, gs_opts, child_name} = patch_opts(name, opts)
 
     spec =
@@ -100,7 +146,7 @@ defmodule DistributedSupervisor do
     me = node()
 
     launcher =
-      case GenServer.call(registry_name(name), {:node_for, child_name}) do
+      case node || GenServer.call(registry_name(name), {:node_for, child_name}) do
         ^me -> &DynamicSupervisor.start_child(&1, spec)
         other -> &:rpc.block_call(other, DynamicSupervisor, :start_child, [&1, spec])
       end
@@ -111,22 +157,26 @@ defmodule DistributedSupervisor do
     |> add_name_to_result(child_name)
   end
 
-  def start_child(name, {mod, opts}) when is_atom(mod),
-    do: start_child(name, %{id: Keyword.get(opts, name), start: {mod, :start_link, opts}})
+  def start_child(name, {mod, opts}, node) when is_atom(mod),
+    do: start_child(name, %{id: Keyword.get(opts, name), start: {mod, :start_link, opts}}, node)
 
-  def start_child(name, mod) when is_atom(mod),
-    do: start_child(name, {mod, []})
+  def start_child(name, mod, node) when is_atom(mod),
+    do: start_child(name, {mod, []}, node)
 
   @doc """
   Returns a map with registered names as keys and pids as values for the instance of the
     registry with a name `name`.
   """
-  @spec children(name()) :: %{optional(term()) => pid()}
+  @spec children(name()) ::
+          %{optional(term()) => pid()}
+          | [{:undefined, pid() | :restarting, :worker | :supervisor, [module()] | :dynamic}]
   def children(name) do
-    name
-    |> registry_name()
-    |> :sys.get_state()
-    |> Map.get(:children, {:error, :unknown_registry})
+    %{children: children, ring: ring} =
+      name
+      |> registry_name()
+      |> :sys.get_state()
+
+    with nil <- children, do: which_children(name, HashRing.nodes(ring))
   end
 
   @doc """
@@ -191,6 +241,17 @@ defmodule DistributedSupervisor do
   @doc false
   @spec notifier_name(module()) :: module()
   def notifier_name(name), do: Module.concat(name, Notifier)
+
+  @spec which_children(name(), [node()]) :: [
+          {:undefined, pid() | :restarting, :worker | :supervisor, [module()] | :dynamic}
+        ]
+  defp which_children(name, nodes) do
+    ds_name = dynamic_supervisor_name(name)
+
+    Enum.flat_map(nodes, fn node ->
+      :rpc.call(node, DynamicSupervisor, :which_children, [ds_name])
+    end)
+  end
 
   @spec patch_opts(module(), keyword()) ::
           {keyword(),

@@ -44,6 +44,7 @@ defmodule DistributedSupervisor.MixProject do
   defp deps do
     [
       {:libring, "~> 1.0"},
+      {:nimble_options_ex, "~> 0.1"},
       {:doctest_formatter, "~> 0.2", only: [:dev], runtime: false},
       {:excoveralls, "~> 0.14", only: [:test], runtime: false},
       {:credo, "~> 1.0", only: [:dev, :test]},

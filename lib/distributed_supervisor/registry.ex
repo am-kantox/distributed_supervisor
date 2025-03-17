@@ -50,6 +50,8 @@ defmodule DistributedSupervisor.Registry do
 
   @impl GenServer
   def init({name, opts}) do
+    opts = NimbleOptions.validate!(opts, DistributedSupervisor.schema())
+
     scope = scope(name)
 
     {ref, pids} = :pg.monitor_scope(scope)
@@ -57,13 +59,23 @@ defmodule DistributedSupervisor.Registry do
 
     ring =
       opts
-      |> Map.get(:nodes, [node() | Node.list()])
+      |> Map.fetch!(:nodes)
+      |> Kernel.||([node() | Node.list()])
       |> then(&HashRing.add_nodes(HashRing.new(), &1))
 
-    listeners =
-      opts |> Map.get(:listeners, []) |> List.wrap() |> Enum.filter(&Code.ensure_loaded?/1)
+    cache_children? = Map.fetch!(opts, :cache_children?)
 
-    state = %{name: name, scope: scope, listeners: listeners, ref: ref, children: %{}, ring: ring}
+    listeners =
+      opts |> Map.fetch!(:listeners) |> List.wrap() |> Enum.filter(&Code.ensure_loaded?/1)
+
+    state = %{
+      name: name,
+      scope: scope,
+      listeners: listeners,
+      ref: ref,
+      children: if(cache_children?, do: %{}),
+      ring: ring
+    }
 
     {:ok, state}
   end
@@ -75,7 +87,8 @@ defmodule DistributedSupervisor.Registry do
     )
 
     maybe_notify_listeners(:join, state.listeners, state.name, group, pid)
-    {:noreply, put_in(state, [:children, group], pid)}
+    state = with %{children: %{}} <- state, do: put_in(state, [:children, group], pid)
+    {:noreply, state}
   end
 
   def handle_info({ref, :leave, group, pids}, %{ref: ref} = state) do
@@ -84,7 +97,8 @@ defmodule DistributedSupervisor.Registry do
     )
 
     maybe_notify_listeners(:leave, state.listeners, state.name, group, pids)
-    {:noreply, %{state | children: Map.delete(state.children, group)}}
+    state = with %{children: %{}} <- state, do: Map.delete(state.children, group)
+    {:noreply, state}
   end
 
   @impl GenServer

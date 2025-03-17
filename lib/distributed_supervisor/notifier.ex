@@ -12,7 +12,7 @@ defmodule DistributedSupervisor.Notifier do
   defguardp is_local(pid) when node(pid) == node()
 
   @impl GenServer
-  def handle_cast({:join, listeners, name, id, pid}, state) when is_local(pid) do
+  def handle_cast({:join, [_ | _] = listeners, name, id, pid}, state) when is_local(pid) do
     Enum.each(listeners, fn listener ->
       {listener, notify?} = parse_listener(listener, id)
       notify? = notify? and function_exported?(listener, :on_process_start, 3)
@@ -23,7 +23,7 @@ defmodule DistributedSupervisor.Notifier do
     {:noreply, state}
   end
 
-  def handle_cast({:leave, listeners, name, id, pid}, state) when is_local(pid) do
+  def handle_cast({:leave, [_ | _] = listeners, name, id, pid}, state) when is_local(pid) do
     Enum.each(listeners, fn listener ->
       {listener, notify?} = parse_listener(listener, id)
       notify? = notify? and function_exported?(listener, :on_process_stop, 3)
