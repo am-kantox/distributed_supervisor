@@ -53,9 +53,7 @@ defmodule DistributedSupervisor.Registry do
     opts = NimbleOptions.validate!(opts, DistributedSupervisor.schema())
 
     scope = scope(name)
-
-    {ref, pids} = :pg.monitor_scope(scope)
-    Enum.each(pids, &Process.exit(&1, :restart))
+    {ref, _pids} = :pg.monitor_scope(scope)
 
     opts |> Map.fetch!(:monitor_nodes) |> do_monitor_nodes()
 
@@ -86,14 +84,15 @@ defmodule DistributedSupervisor.Registry do
   @impl GenServer
   def handle_info({:nodeup, node, info}, %{ring: ring} = state) do
     Logger.debug("[🗒️] #{inspect(node)} node joined the cluster #{inspect(state.name)}")
-    maybe_notify_listeners(:nodeup, state.listeners, state.name, node, info)
+    maybe_notify_listeners(:nodeup, state.listeners, state.name, {ring, node}, info)
     {:noreply, %{state | ring: HashRing.add_node(ring, node)}}
   end
 
   def handle_info({:nodedown, node, info}, %{ring: ring} = state) do
     Logger.debug("[🗒️] #{inspect(node)} node left the cluster #{inspect(state.name)}")
-    maybe_notify_listeners(:nodedown, state.listeners, state.name, node, info)
-    {:noreply, %{state | ring: HashRing.remove_node(ring, node)}}
+    ring = HashRing.remove_node(ring, node)
+    maybe_notify_listeners(:nodedown, state.listeners, state.name, {ring, node}, info)
+    {:noreply, %{state | ring: ring}}
   end
 
   def handle_info({ref, :join, group, [pid]}, %{ref: ref} = state) do
@@ -157,11 +156,11 @@ defmodule DistributedSupervisor.Registry do
     |> GenServer.cast({join_or_leave, listeners, name, id, pid})
   end
 
-  def maybe_notify_listeners(up_or_down, listeners, name, node, info)
+  def maybe_notify_listeners(up_or_down, listeners, name, {ring, node}, info)
       when up_or_down in [:nodeup, :nodedown] do
     name
     |> DistributedSupervisor.notifier_name()
-    |> GenServer.cast({up_or_down, listeners, name, node, info})
+    |> GenServer.cast({up_or_down, listeners, name, {ring, node}, info})
   end
 
   defp do_monitor_nodes(false), do: :ok

@@ -34,10 +34,13 @@ defmodule DistributedSupervisor.Notifier do
     {:noreply, state}
   end
 
-  def handle_cast({:nodeup, [_ | _] = listeners, name, node, info}, state) do
+  def handle_cast({:nodeup, [_ | _] = listeners, name, {ring, node}, info}, state) do
     Enum.each(listeners, fn listener ->
       {listener, _notify?} = parse_listener(listener, "")
-      notify? = function_exported?(listener, :on_node_up, 3)
+
+      notify? =
+        function_exported?(listener, :on_node_up, 3) and
+          HashRing.key_to_node(ring, node) == node()
 
       maybe_notify_up(notify?, listener, name, node, info)
     end)
@@ -45,10 +48,13 @@ defmodule DistributedSupervisor.Notifier do
     {:noreply, state}
   end
 
-  def handle_cast({:nodedown, [_ | _] = listeners, name, node, info}, state) do
+  def handle_cast({:nodedown, [_ | _] = listeners, name, {ring, node}, info}, state) do
     Enum.each(listeners, fn listener ->
       {listener, _notify?} = parse_listener(listener, "")
-      notify? = function_exported?(listener, :on_node_down, 3)
+
+      notify? =
+        function_exported?(listener, :on_node_down, 3) and
+          HashRing.key_to_node(ring, node) == node()
 
       maybe_notify_down(notify?, listener, name, node, info)
     end)
