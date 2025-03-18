@@ -2,7 +2,7 @@ defmodule DistributedSupervisor.MixProject do
   use Mix.Project
 
   @app :distributed_supervisor
-  @version "0.2.0"
+  @version "0.3.0"
 
   def project do
     [
