@@ -45,6 +45,13 @@ defmodule DistributedSupervisor.Notifier do
       maybe_notify_up(notify?, listener, name, node, info)
     end)
 
+    state =
+      if state.nodes == [] or node in state.nodes do
+        %{state | ring: HashRing.add_node(ring, node)}
+      else
+        state
+      end
+
     {:noreply, state}
   end
 
@@ -59,7 +66,7 @@ defmodule DistributedSupervisor.Notifier do
       maybe_notify_down(notify?, listener, name, node, info)
     end)
 
-    {:noreply, state}
+    {:noreply, %{state | ring: HashRing.remove_node(ring, node)}}
   end
 
   def handle_cast(_, state), do: {:noreply, state}

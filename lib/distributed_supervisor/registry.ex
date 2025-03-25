@@ -57,10 +57,14 @@ defmodule DistributedSupervisor.Registry do
 
     opts |> Map.fetch!(:monitor_nodes) |> do_monitor_nodes()
 
+    nodes = Map.fetch!(opts, :nodes)
+
     ring =
-      opts
-      |> Map.fetch!(:nodes)
-      |> Kernel.||([node() | Node.list()])
+      nodes
+      |> case do
+        [] -> [node() | Node.list()]
+        nodes -> Enum.filter(nodes, &(true == Node.connect(&1)))
+      end
       |> then(&HashRing.add_nodes(HashRing.new(), &1))
 
     cache_children? = Map.fetch!(opts, :cache_children?)
@@ -73,6 +77,7 @@ defmodule DistributedSupervisor.Registry do
       name: name,
       scope: scope,
       listeners: listeners,
+      nodes: nodes,
       ref: ref,
       children: if(cache_children?, do: %{}),
       ring: ring
@@ -120,8 +125,11 @@ defmodule DistributedSupervisor.Registry do
     do: {:reply, HashRing.key_to_node(ring, key), state}
 
   @impl GenServer
-  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state),
-    do: {:reply, %{state | ring: HashRing.add_nodes(ring, List.wrap(nodes))}}
+  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state) do
+    nodes = List.wrap(nodes)
+    all_nodes = with [_ | _] = old_nodes <- state.nodes, do: Enum.uniq(nodes ++ old_nodes)
+    {:reply, %{state | nodes: all_nodes, ring: HashRing.add_nodes(ring, nodes)}}
+  end
 
   #############################################################################
 

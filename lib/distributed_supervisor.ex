@@ -45,8 +45,8 @@ defmodule DistributedSupervisor do
     ],
     nodes: [
       required: false,
-      type: :atom,
-      default: nil,
+      type: {:list, :atom},
+      default: [],
       doc:
         "The hardcoded list of nodes to spread children across, if not passed, all connected nodes will be used"
     ],
@@ -154,6 +154,7 @@ defmodule DistributedSupervisor do
 
     launcher =
       case node || GenServer.call(registry_name(name), {:node_for, child_name}) do
+        {:error, {:invalid_ring, :no_nodes}} -> &DynamicSupervisor.start_child(&1, spec)
         ^me -> &DynamicSupervisor.start_child(&1, spec)
         other -> &:rpc.block_call(other, DynamicSupervisor, :start_child, [&1, spec])
       end
