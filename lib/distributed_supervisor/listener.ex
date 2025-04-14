@@ -29,5 +29,16 @@ defmodule DistributedSupervisor.Listener do
               info :: map() | keyword()
             ) :: :ok
 
-  @optional_callbacks on_process_start: 3, on_process_stop: 3, on_node_up: 3, on_node_down: 3
+  @callback on_node_terminate(
+              name :: DistributedSupervisor.name(),
+              node :: node(),
+              reason :: :normal | :shutdown | {:shutdown, term()} | term(),
+              statuses :: [{:status, pid(), {:module, module()}, [term()]}]
+            ) :: :ok
+
+  @optional_callbacks on_process_start: 3,
+                      on_process_stop: 3,
+                      on_node_up: 3,
+                      on_node_down: 3,
+                      on_node_terminate: 4
 end

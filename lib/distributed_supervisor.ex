@@ -94,6 +94,7 @@ defmodule DistributedSupervisor do
   @doc false
   def init({name, opts}) do
     children = [
+      {__MODULE__.Guard, distributed_supervisor_id: name},
       {__MODULE__.Notifier, name: notifier_name(name)},
       %{
         id: __MODULE__.Supervisor,
@@ -153,10 +154,10 @@ defmodule DistributedSupervisor do
     me = node()
 
     launcher =
-      case node || GenServer.call(registry_name(name), {:node_for, child_name}) do
+      case node || node_for(name, child_name) do
         {:error, {:invalid_ring, :no_nodes}} -> &DynamicSupervisor.start_child(&1, spec)
         ^me -> &DynamicSupervisor.start_child(&1, spec)
-        other -> &:rpc.block_call(other, DynamicSupervisor, :start_child, [&1, spec])
+        other -> &:rpc.call(other, DynamicSupervisor, :start_child, [&1, spec])
       end
 
     name
@@ -172,6 +173,29 @@ defmodule DistributedSupervisor do
     do: start_child(name, {mod, []}, node)
 
   @doc """
+  Returns the list of nodes operated by a registered ring
+  """
+  def nodes(name), do: name |> registry_name() |> GenServer.call(:nodes)
+
+  @doc """
+  Returns the node for the key given according to a `HashRing`
+  """
+  def node_for(name, key),
+    do: name |> registry_name() |> GenServer.call({:node_for, key})
+
+  @doc """
+  Returns `true` if called from a node assigned to this key, `false` otherwise
+  """
+  def mine?(name, key), do: node_for(name, key) == node()
+
+  @doc """
+  Returns a list of pids of local children
+  """
+  @spec local_children(name()) :: [pid()]
+  def local_children(name),
+    do: name |> which_children([node()]) |> List.wrap() |> Enum.map(&elem(&1, 1))
+
+  @doc """
   Returns a map with registered names as keys and pids as values for the instance of the
     registry with a name `name`.
   """
@@ -181,7 +205,7 @@ defmodule DistributedSupervisor do
   def children(name) do
     name
     |> registry_name()
-    |> :sys.get_state()
+    |> GenServer.call(:state)
     |> case do
       %{children: children} when not is_nil(children) -> children
       %{ring: ring} -> which_children(name, HashRing.nodes(ring))

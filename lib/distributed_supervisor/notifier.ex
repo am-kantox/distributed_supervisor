@@ -45,13 +45,6 @@ defmodule DistributedSupervisor.Notifier do
       maybe_notify_up(notify?, listener, name, node, info)
     end)
 
-    state =
-      if state.nodes == [] or node in state.nodes do
-        %{state | ring: HashRing.add_node(ring, node)}
-      else
-        state
-      end
-
     {:noreply, state}
   end
 
@@ -66,7 +59,23 @@ defmodule DistributedSupervisor.Notifier do
       maybe_notify_down(notify?, listener, name, node, info)
     end)
 
-    {:noreply, %{state | ring: HashRing.remove_node(ring, node)}}
+    {:noreply, state}
+  end
+
+  def handle_cast(
+        {:node_terminate, [_ | _] = listeners, name, {_ring, node}, {reason, statuses}},
+        state
+      ) do
+    Enum.each(listeners, fn listener ->
+      {listener, _notify?} = parse_listener(listener, "")
+
+      notify? =
+        function_exported?(listener, :on_node_terminate, 4)
+
+      maybe_notify_terminate(notify?, listener, name, node, reason, statuses)
+    end)
+
+    {:noreply, state}
   end
 
   def handle_cast(_, state), do: {:noreply, state}
@@ -97,4 +106,9 @@ defmodule DistributedSupervisor.Notifier do
     do: listener.on_node_down(name, node, info)
 
   defp maybe_notify_down(_, _, _, _, _), do: :ok
+
+  defp maybe_notify_terminate(true, listener, name, node, reason, statuses),
+    do: listener.on_node_terminate(name, node, reason, statuses)
+
+  defp maybe_notify_terminate(_, _, _, _, _, _), do: :ok
 end

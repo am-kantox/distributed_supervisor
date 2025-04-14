@@ -90,6 +90,7 @@ defmodule DistributedSupervisor.Registry do
   def handle_info({:nodeup, node, info}, %{ring: ring} = state) do
     Logger.debug("[🗒️] #{inspect(node)} node joined the cluster #{inspect(state.name)}")
     maybe_notify_listeners(:nodeup, state.listeners, state.name, {ring, node}, info)
+    # AM
     {:noreply, %{state | ring: HashRing.add_node(ring, node)}}
   end
 
@@ -98,6 +99,22 @@ defmodule DistributedSupervisor.Registry do
     ring = HashRing.remove_node(ring, node)
     maybe_notify_listeners(:nodedown, state.listeners, state.name, {ring, node}, info)
     {:noreply, %{state | ring: ring}}
+  end
+
+  def handle_info({:node_terminate, node, reason, statuses}, %{ring: ring} = state) do
+    Logger.debug(
+      "[🗒️] #{inspect(node)} node (#{Enum.count(statuses)} processes) is terminated with reason #{inspect(reason)}"
+    )
+
+    maybe_notify_listeners(
+      :node_terminate,
+      state.listeners,
+      state.name,
+      {ring, node},
+      {reason, statuses}
+    )
+
+    {:noreply, state}
   end
 
   def handle_info({ref, :join, group, [pid]}, %{ref: ref} = state) do
@@ -115,21 +132,25 @@ defmodule DistributedSupervisor.Registry do
     maybe_notify_listeners(:leave, state.listeners, state.name, group, pids)
 
     state =
-      with %{children: %{}} <- state, do: %{state | children: Map.delete(state.children, group)}
+      with %{children: %{} = children} <- state,
+           do: %{state | children: Map.delete(children, group)}
 
     {:noreply, state}
   end
+
+  @impl GenServer
+  def handle_call(:state, _from, state), do: {:reply, state, state}
+
+  @impl GenServer
+  def handle_call(:nodes, _from, state), do: {:reply, HashRing.nodes(state.ring), state}
 
   @impl GenServer
   def handle_call({:node_for, key}, _from, %{ring: ring} = state),
     do: {:reply, HashRing.key_to_node(ring, key), state}
 
   @impl GenServer
-  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state) do
-    nodes = List.wrap(nodes)
-    all_nodes = with [_ | _] = old_nodes <- state.nodes, do: Enum.uniq(nodes ++ old_nodes)
-    {:reply, %{state | nodes: all_nodes, ring: HashRing.add_nodes(ring, nodes)}}
-  end
+  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state),
+    do: {:reply, %{state | ring: HashRing.add_nodes(ring, List.wrap(nodes))}}
 
   #############################################################################
 
@@ -164,11 +185,11 @@ defmodule DistributedSupervisor.Registry do
     |> GenServer.cast({join_or_leave, listeners, name, id, pid})
   end
 
-  def maybe_notify_listeners(up_or_down, listeners, name, {ring, node}, info)
-      when up_or_down in [:nodeup, :nodedown] do
+  def maybe_notify_listeners(up_down_terminate, listeners, name, {ring, node}, info)
+      when up_down_terminate in [:nodeup, :nodedown, :node_terminate] do
     name
     |> DistributedSupervisor.notifier_name()
-    |> GenServer.cast({up_or_down, listeners, name, {ring, node}, info})
+    |> GenServer.cast({up_down_terminate, listeners, name, {ring, node}, info})
   end
 
   defp do_monitor_nodes(false), do: :ok

@@ -45,4 +45,12 @@ defmodule DistributedSupervisor.Test.Listener do
   def on_node_down(name, node, info) do
     Logger.info("✗ node down: " <> inspect(name: name, node: node, info: info))
   end
+
+  @impl true
+  def on_node_terminate(name, node, reason, statuses) do
+    Logger.info(
+      "✗ node terminating: " <>
+        inspect(name: name, node: node, reason: reason, statuses: statuses)
+    )
+  end
 end
