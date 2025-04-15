@@ -6,7 +6,8 @@ defmodule DistributedSupervisorTest do
 
   test "works on the single node" do
     start_supervised!(
-      {DistributedSupervisor, name: DS1, listeners: DistributedSupervisor.Test.Listener}
+      {DistributedSupervisor,
+       name: DS1, listeners: DistributedSupervisor.Test.Listener, cache_children?: false}
     )
 
     assert {:ok, _pid, MyGS_1} = DistributedSupervisor.start_child(DS1, {MyGS, name: MyGS_1})

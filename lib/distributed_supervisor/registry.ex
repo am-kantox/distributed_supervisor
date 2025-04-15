@@ -124,20 +124,62 @@ defmodule DistributedSupervisor.Registry do
     maybe_notify_listeners(:join, state.listeners, state.name, group, pid)
     winner = fix_group(state.name, state.scope, group, state.ring)
 
+    {initial_call, name, process_state} =
+      case :sys.get_status(winner) do
+        {:status, ^winner, {:module, :gen_server},
+         [start_info, :running, _leader, _, process_info]} ->
+          initial_call = Keyword.get(start_info, :"$initial_call")
+          name = get_in(process_info, [:header, Access.elem(1), Access.elem(1)])
+
+          state =
+            process_info
+            |> Keyword.split([:data])
+            |> elem(0)
+            |> Enum.flat_map(&elem(&1, 1))
+            |> Enum.filter(&match?({~c"State", _}, &1))
+            |> Enum.map(&elem(&1, 1))
+            |> List.first()
+
+          {initial_call, name, state}
+
+        _ ->
+          {nil, nil, nil}
+      end
+
     state =
-      with %{children: %{}} <- state,
-           do: put_in(state, [:children, group], winner)
+      with %{children: %{}} <- state do
+        put_in(state, [:children, Access.key(group, %{}), winner], %{
+          initial_call: initial_call,
+          name: name,
+          state: process_state
+        })
+      end
 
     {:noreply, state}
   end
 
-  def handle_info({ref, :leave, group, pids}, %{ref: ref} = state) do
-    Logger.debug("[🗒️] #{inspect(pids)} processes left group #{inspect(group)}")
-    maybe_notify_listeners(:leave, state.listeners, state.name, group, pids)
+  def handle_info({ref, :leave, group, [pid]}, %{ref: ref} = state) do
+    Logger.debug("[🗒️] #{inspect(pid)} process left group #{inspect(group)}")
+    maybe_notify_listeners(:leave, state.listeners, state.name, group, pid)
 
     state =
-      with %{children: %{} = children} <- state,
-           do: %{state | children: Map.delete(children, group)}
+      with %{children: %{}} <- state do
+        with true <- pid |> node() |> Node.connect() |> Kernel.!(),
+             [%{name: name, state: _process_state, initial_call: {module, :init, initial_state}}] <-
+               get_in(state, [:children, group, pid]) do
+          DistributedSupervisor.start_child(
+            state.name,
+            {GenServer, [module, initial_state, [name: name]]}
+          )
+        end
+
+        Map.update!(state, :children, fn %{^group => pids} = children ->
+          case Map.delete(pids, pid) do
+            map when map == %{} -> Map.delete(children, group)
+            map -> Map.put(children, group, map)
+          end
+        end)
+      end
 
     {:noreply, state}
   end
@@ -214,6 +256,8 @@ defmodule DistributedSupervisor.Registry do
         fix_loser(name, group, winner, loser)
     end
   end
+
+  defp fix_group(_name, scope, group, _ring), do: scope |> :pg.get_members(group) |> hd()
 
   defp fix_loser(name, group, winner, loser) do
     Logger.warning(

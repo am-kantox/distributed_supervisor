@@ -40,8 +40,10 @@ defmodule DistributedSupervisor do
     cache_children?: [
       required: false,
       type: :boolean,
-      default: false,
-      doc: "If `true`, `Registry` will cache children as a map of `%{name => pid()}`"
+      default: true,
+      doc:
+        "If `true`, `Registry` will cache children as a map of `%{name => %{pid() => initial_params}}`, " <>
+          "setting this to `false` would block the functionañity of restarting a process on another node when any node goes down"
     ],
     nodes: [
       required: false,
