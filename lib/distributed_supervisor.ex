@@ -240,12 +240,12 @@ defmodule DistributedSupervisor do
   def whereis(name, child), do: DistributedSupervisor.Registry.whereis_name({name, child})
 
   @doc """
-  A syntactic sugar for `GenServer.call/2` allowing to call a dynamically supervised
+  A syntactic sugar for `GenServer.call/3` allowing to call a dynamically supervised
     `GenServer` by registry name and key.
   """
-  @spec call(name(), id(), msg) :: result when msg: term(), result: term()
-  def call(name, child, msg),
-    do: name |> via_name(child) |> GenServer.call(msg)
+  @spec call(name(), id(), msg, timeout()) :: result when msg: term(), result: term()
+  def call(name, child, msg, timeout \\ 5_000),
+    do: name |> via_name(child) |> GenServer.call(msg, timeout)
 
   @doc """
   A syntactic sugar for `GenServer.cast/2` allowing to call a dynamically supervised
