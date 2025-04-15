@@ -11,7 +11,10 @@ defmodule DistributedSupervisor.Registry do
   @type group :: DistributedSupervisor.id()
 
   def register_name({registry, key}, pid) do
-    with :ok <- :pg.join(scope(registry), key, pid), do: :yes
+    with [] <- :pg.get_members(scope(registry), key),
+         :ok <- :pg.join(scope(registry), key, pid),
+         do: :yes,
+         else: (_ -> :no)
   end
 
   def unregister_name({registry, key}) do
@@ -90,7 +93,6 @@ defmodule DistributedSupervisor.Registry do
   def handle_info({:nodeup, node, info}, %{ring: ring} = state) do
     Logger.debug("[🗒️] #{inspect(node)} node joined the cluster #{inspect(state.name)}")
     maybe_notify_listeners(:nodeup, state.listeners, state.name, {ring, node}, info)
-    # AM
     {:noreply, %{state | ring: HashRing.add_node(ring, node)}}
   end
 
@@ -120,9 +122,11 @@ defmodule DistributedSupervisor.Registry do
   def handle_info({ref, :join, group, [pid]}, %{ref: ref} = state) do
     Logger.debug("[🗒️] #{inspect(pid)} process joined group #{inspect(group)}")
     maybe_notify_listeners(:join, state.listeners, state.name, group, pid)
+    winner = fix_group(state.name, state.scope, group, state.ring)
 
     state =
-      with %{children: %{}} <- state, do: put_in(state, [:children, group], pid)
+      with %{children: %{}} <- state,
+           do: put_in(state, [:children, group], winner)
 
     {:noreply, state}
   end
@@ -195,4 +199,29 @@ defmodule DistributedSupervisor.Registry do
   defp do_monitor_nodes(false), do: :ok
   defp do_monitor_nodes(true), do: do_monitor_nodes(:all)
   defp do_monitor_nodes(kind), do: :net_kernel.monitor_nodes(true, node_type: kind)
+
+  defp fix_group(name, scope, group, ring) when is_atom(group) do
+    winner_node = HashRing.key_to_node(ring, group)
+
+    case :pg.get_members(scope, group) do
+      [winner] ->
+        winner
+
+      [winner, loser] when node(winner) == winner_node ->
+        fix_loser(name, group, winner, loser)
+
+      [loser, winner] when node(winner) == winner_node ->
+        fix_loser(name, group, winner, loser)
+    end
+  end
+
+  defp fix_loser(name, group, winner, loser) do
+    Logger.warning(
+      "[🗒️] Shutting the named process ‹" <>
+        inspect(group) <> "› down at ‹" <> inspect(node(loser)) <> "›"
+    )
+
+    DistributedSupervisor.terminate_child(name, loser)
+    winner
+  end
 end

@@ -173,6 +173,25 @@ defmodule DistributedSupervisor do
     do: start_child(name, {mod, []}, node)
 
   @doc """
+  Terminates the given child identified by pid.
+
+  If successful, this function returns `:ok`.
+  If there is no process with the given PID, this function returns `{:error, :not_found}`.
+
+  _See:_ `DynamicSupervisor.terminate_child/2`
+  """
+  @spec terminate_child(name(), pid()) :: :ok | {:error, :not_found}
+  def terminate_child(name, pid) do
+    ds_name = dynamic_supervisor_name(name)
+    me = node()
+
+    case node(pid) do
+      ^me -> DynamicSupervisor.terminate_child(ds_name, pid)
+      other -> :rpc.call(other, DynamicSupervisor, :terminate_child, [ds_name, pid])
+    end
+  end
+
+  @doc """
   Returns the list of nodes operated by a registered ring
   """
   def nodes(name), do: name |> registry_name() |> GenServer.call(:nodes)
