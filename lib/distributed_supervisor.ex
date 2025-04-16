@@ -150,21 +150,11 @@ defmodule DistributedSupervisor do
 
     spec =
       spec
-      |> Map.put(:start, {mod, fun, [opts]})
+      |> Map.put(:start, {mod, fun, opts})
       |> Map.merge(gs_opts)
 
-    me = node()
-
-    launcher =
-      case node || node_for(name, child_name) do
-        {:error, {:invalid_ring, :no_nodes}} -> &DynamicSupervisor.start_child(&1, spec)
-        ^me -> &DynamicSupervisor.start_child(&1, spec)
-        other -> &:rpc.call(other, DynamicSupervisor, :start_child, [&1, spec])
-      end
-
     name
-    |> dynamic_supervisor_name()
-    |> launcher.()
+    |> do_start_child(spec, node || node_for(name, child_name))
     |> add_name_to_result(child_name)
   end
 
@@ -173,6 +163,22 @@ defmodule DistributedSupervisor do
 
   def start_child(name, mod, node) when is_atom(mod),
     do: start_child(name, {mod, []}, node)
+
+  @doc false
+  def do_start_child(name, spec, node) do
+    me = node()
+
+    launcher =
+      case node do
+        {:error, {:invalid_ring, :no_nodes}} -> &DynamicSupervisor.start_child(&1, spec)
+        ^me -> &DynamicSupervisor.start_child(&1, spec)
+        other -> &:rpc.call(other, DynamicSupervisor, :start_child, [&1, spec])
+      end
+
+    name
+    |> dynamic_supervisor_name()
+    |> launcher.()
+  end
 
   @doc """
   Terminates the given child identified by pid.
@@ -289,6 +295,10 @@ defmodule DistributedSupervisor do
   def dynamic_supervisor_name(name), do: Module.concat(name, DynamicSupervisor)
 
   @doc false
+  def dynamic_supervisor_status(name),
+    do: name |> dynamic_supervisor_name() |> GenServer.whereis() |> :sys.get_status()
+
+  @doc false
   @spec registry_name(module()) :: module()
   def registry_name(name), do: Module.concat(name, Registry)
 
@@ -319,17 +329,23 @@ defmodule DistributedSupervisor do
   defp patch_opts(name, opts) do
     child_name =
       case Keyword.fetch(opts, :name) do
+        {:ok, {:via, DistributedSupervisor.Registry, {^name, result}}} -> result
         {:ok, result} -> result
         :error -> make_ref()
       end
 
     {gs_opts, opts} =
-      opts
-      |> Keyword.put(:name, via_name(name, child_name))
-      |> Keyword.put_new(:restart, :permanent)
-      |> Keyword.split([:restart, :shutdown, :type, :modules, :significant])
+      if Keyword.keyword?(opts) do
+        opts
+        |> Keyword.put(:name, via_name(name, child_name))
+        |> Keyword.put_new(:restart, :permanent)
+        |> Keyword.split([:restart, :shutdown, :type, :modules, :significant])
+        |> then(fn {gs_opts, opts} -> {Map.new(gs_opts), [opts]} end)
+      else
+        {%{restart: :permanent}, opts}
+      end
 
-    {opts, Map.new(gs_opts), child_name}
+    {opts, gs_opts, child_name}
   end
 
   @spec add_name_to_result(DynamicSupervisor.on_start_child(), term()) ::

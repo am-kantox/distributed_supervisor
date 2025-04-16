@@ -124,35 +124,9 @@ defmodule DistributedSupervisor.Registry do
     maybe_notify_listeners(:join, state.listeners, state.name, group, pid)
     winner = fix_group(state.name, state.scope, group, state.ring)
 
-    {initial_call, name, process_state} =
-      case :sys.get_status(winner) do
-        {:status, ^winner, {:module, :gen_server},
-         [start_info, :running, _leader, _, process_info]} ->
-          initial_call = Keyword.get(start_info, :"$initial_call")
-          name = get_in(process_info, [:header, Access.elem(1), Access.elem(1)])
-
-          state =
-            process_info
-            |> Keyword.split([:data])
-            |> elem(0)
-            |> Enum.flat_map(&elem(&1, 1))
-            |> Enum.filter(&match?({~c"State", _}, &1))
-            |> Enum.map(&elem(&1, 1))
-            |> List.first()
-
-          {initial_call, name, state}
-
-        _ ->
-          {nil, nil, nil}
-      end
-
     state =
       with %{children: %{}} <- state do
-        put_in(state, [:children, Access.key(group, %{}), winner], %{
-          initial_call: initial_call,
-          name: name,
-          state: process_state
-        })
+        put_in(state, [:children, Access.key(group, %{}), winner], get_spec(state.name, winner))
       end
 
     {:noreply, state}
@@ -164,21 +138,24 @@ defmodule DistributedSupervisor.Registry do
 
     state =
       with %{children: %{}} <- state do
+        new_state =
+          Map.update!(state, :children, fn %{^group => pids} = children ->
+            case Map.delete(pids, pid) do
+              map when map == %{} -> Map.delete(children, group)
+              map -> Map.put(children, group, map)
+            end
+          end)
+
         with true <- pid |> node() |> Node.connect() |> Kernel.!(),
-             [%{name: name, state: _process_state, initial_call: {module, :init, initial_state}}] <-
-               get_in(state, [:children, group, pid]) do
-          DistributedSupervisor.start_child(
+             %{} = spec <- get_in(state, [:children, group, pid]) do
+          DistributedSupervisor.do_start_child(
             state.name,
-            {GenServer, [module, initial_state, [name: name]]}
+            spec,
+            HashRing.key_to_node(HashRing.remove_node(state.ring, node(pid)), state.name)
           )
         end
 
-        Map.update!(state, :children, fn %{^group => pids} = children ->
-          case Map.delete(pids, pid) do
-            map when map == %{} -> Map.delete(children, group)
-            map -> Map.put(children, group, map)
-          end
-        end)
+        new_state
       end
 
     {:noreply, state}
@@ -267,5 +244,33 @@ defmodule DistributedSupervisor.Registry do
 
     DistributedSupervisor.terminate_child(name, loser)
     winner
+  end
+
+  def get_spec(name, pid) do
+    pid
+    |> node()
+    |> :rpc.block_call(DistributedSupervisor, :dynamic_supervisor_status, [name])
+    |> case do
+      {:status, _pid, {:module, :gen_server}, props} when is_list(props) ->
+        datas =
+          props
+          |> get_in([
+            Access.filter(&Keyword.keyword?/1),
+            Access.filter(&match?({:data, _}, &1)),
+            Access.elem(1)
+          ])
+          |> List.flatten()
+
+        # #PID<0.275.0> => {{Impl, :start_link, args}, :permanent, 5000, :worker, [Impl]}
+        # args = [[name: {:via, DistributedSupervisor.Registry, {DS, G2}}]]
+        with %DynamicSupervisor{children: %{^pid => result}} <-
+               :proplists.get_value(~c"State", datas, nil),
+             {{impl, fun, opts}, restart, shutdown, type, _modules} <- result do
+          %{id: impl, start: {impl, fun, opts}, restart: restart, shutdown: shutdown, type: type}
+        end
+
+      _ ->
+        nil
+    end
   end
 end

@@ -8,7 +8,7 @@ defmodule DistributedSupervisor.Test.GenServer do
   end
 
   @impl true
-  def init(0), do: {:ok, 0}
+  def init(0), do: {:ok, tap(0, &Process.put(:foo, &1))}
 
   @impl true
   def handle_call(:state, from, state), do: {:reply, {from, state}, state}
