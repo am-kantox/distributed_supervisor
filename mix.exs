@@ -2,7 +2,7 @@ defmodule DistributedSupervisor.MixProject do
   use Mix.Project
 
   @app :distributed_supervisor
-  @version "0.5.0"
+  @version "0.5.1"
 
   def project do
     [
@@ -17,6 +17,7 @@ defmodule DistributedSupervisor.MixProject do
       deps: deps(),
       aliases: aliases(),
       docs: docs(),
+      prune_code_paths: Mix.env() not in [:dev, :test],
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [
         credo: :dev,
@@ -46,6 +47,7 @@ defmodule DistributedSupervisor.MixProject do
       {:libring, "~> 1.0"},
       {:nimble_options_ex, "~> 0.1"},
       {:doctest_formatter, "~> 0.2", only: [:dev], runtime: false},
+      {:enfiladex, "~> 0.2", only: [:dev, :test]},
       {:excoveralls, "~> 0.14", only: [:test], runtime: false},
       {:credo, "~> 1.0", only: [:dev, :test]},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},

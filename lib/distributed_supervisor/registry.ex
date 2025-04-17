@@ -69,6 +69,7 @@ defmodule DistributedSupervisor.Registry do
         nodes -> Enum.filter(nodes, &(true == Node.connect(&1)))
       end
       |> then(&HashRing.add_nodes(HashRing.new(), &1))
+      |> tap(&:persistent_term.put(name, &1))
 
     cache_children? = Map.fetch!(opts, :cache_children?)
     # https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-1
@@ -93,12 +94,17 @@ defmodule DistributedSupervisor.Registry do
   def handle_info({:nodeup, node, info}, %{ring: ring} = state) do
     Logger.debug("[🗒️] #{inspect(node)} node joined the cluster #{inspect(state.name)}")
     maybe_notify_listeners(:nodeup, state.listeners, state.name, {ring, node}, info)
-    {:noreply, %{state | ring: HashRing.add_node(ring, node)}}
+
+    {:noreply,
+     %{
+       state
+       | ring: ring |> HashRing.add_node(node) |> tap(&:persistent_term.put(state.name, &1))
+     }}
   end
 
   def handle_info({:nodedown, node, info}, %{ring: ring} = state) do
     Logger.debug("[🗒️] #{inspect(node)} node left the cluster #{inspect(state.name)}")
-    ring = HashRing.remove_node(ring, node)
+    ring = ring |> HashRing.remove_node(node) |> tap(&:persistent_term.put(state.name, &1))
     maybe_notify_listeners(:nodedown, state.listeners, state.name, {ring, node}, info)
     {:noreply, %{state | ring: ring}}
   end
@@ -172,8 +178,16 @@ defmodule DistributedSupervisor.Registry do
     do: {:reply, HashRing.key_to_node(ring, key), state}
 
   @impl GenServer
-  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state),
-    do: {:reply, %{state | ring: HashRing.add_nodes(ring, List.wrap(nodes))}}
+  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state) do
+    {:reply,
+     %{
+       state
+       | ring:
+           ring
+           |> HashRing.add_nodes(List.wrap(nodes))
+           |> tap(&:persistent_term.put(state.name, &1))
+     }}
+  end
 
   #############################################################################
 

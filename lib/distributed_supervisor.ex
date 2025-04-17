@@ -202,13 +202,22 @@ defmodule DistributedSupervisor do
   @doc """
   Returns the list of nodes operated by a registered ring
   """
-  def nodes(name), do: name |> registry_name() |> GenServer.call(:nodes)
+  def nodes(name) do
+    case :persistent_term.get(name, nil) do
+      %HashRing{} = ring -> HashRing.nodes(ring)
+      nil -> name |> registry_name() |> GenServer.call(:nodes)
+    end
+  end
 
   @doc """
   Returns the node for the key given according to a `HashRing`
   """
-  def node_for(name, key),
-    do: name |> registry_name() |> GenServer.call({:node_for, key})
+  def node_for(name, key) do
+    case :persistent_term.get(name, nil) do
+      %HashRing{} = ring -> HashRing.key_to_node(ring, key)
+      nil -> name |> registry_name() |> GenServer.call({:node_for, key})
+    end
+  end
 
   @doc """
   Returns `true` if called from a node assigned to this key, `false` otherwise
