@@ -172,7 +172,7 @@ defmodule DistributedSupervisor do
       case node do
         {:error, {:invalid_ring, :no_nodes}} -> &DynamicSupervisor.start_child(&1, spec)
         ^me -> &DynamicSupervisor.start_child(&1, spec)
-        other -> &:rpc.call(other, DynamicSupervisor, :start_child, [&1, spec])
+        other -> &:rpc.block_call(other, DynamicSupervisor, :start_child, [&1, spec])
       end
 
     name
@@ -195,7 +195,7 @@ defmodule DistributedSupervisor do
 
     case node(pid) do
       ^me -> DynamicSupervisor.terminate_child(ds_name, pid)
-      other -> :rpc.call(other, DynamicSupervisor, :terminate_child, [ds_name, pid])
+      other -> :rpc.block_call(other, DynamicSupervisor, :terminate_child, [ds_name, pid])
     end
   end
 
@@ -320,9 +320,11 @@ defmodule DistributedSupervisor do
         ]
   defp which_children(name, nodes) do
     ds_name = dynamic_supervisor_name(name)
+    me = node()
 
-    Enum.flat_map(nodes, fn node ->
-      :rpc.call(node, DynamicSupervisor, :which_children, [ds_name])
+    Enum.flat_map(nodes, fn
+      ^me -> DynamicSupervisor.which_children(ds_name)
+      node -> :rpc.call(node, DynamicSupervisor, :which_children, [ds_name])
     end)
   end
 

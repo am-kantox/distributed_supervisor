@@ -206,7 +206,12 @@ defmodule DistributedSupervisor.Registry do
         :undefined
 
       [pid] ->
-        if :rpc.block_call(node(pid), Process, :alive?, [pid]), do: pid, else: :restarting
+        me = node()
+
+        case node(pid) do
+          ^me -> if Process.alive?(pid), do: pid, else: :restarting
+          other -> if :rpc.call(other, Process, :alive?, [pid]), do: pid, else: :restarting
+        end
 
       [_ | _] ->
         :unsupported
@@ -261,9 +266,14 @@ defmodule DistributedSupervisor.Registry do
   end
 
   def get_spec(name, pid) do
+    me = node()
+
     pid
     |> node()
-    |> :rpc.block_call(DistributedSupervisor, :dynamic_supervisor_status, [name])
+    |> case do
+      ^me -> DistributedSupervisor.dynamic_supervisor_status(name)
+      other -> :rpc.call(other, DistributedSupervisor, :dynamic_supervisor_status, [name])
+    end
     |> case do
       {:status, _pid, {:module, :gen_server}, props} when is_list(props) ->
         datas =
