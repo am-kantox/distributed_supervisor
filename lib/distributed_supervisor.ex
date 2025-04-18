@@ -11,7 +11,7 @@ defmodule DistributedSupervisor do
   iex|🌢|n1@am|2> DistributedSupervisor.start_child(DS, {MyGenServer, name: MGS})
   {:ok, #PID<0.311.0>, MGS}
   iex|🌢|n1@am|3> DistributedSupervisor.children(DS)
-  %{MGS => #PID<0.311.0>}
+  %{MGS => {#PID<0.311.0>, %{id: …}}}
   ```
   """
   use Supervisor
@@ -236,7 +236,7 @@ defmodule DistributedSupervisor do
     registry with a name `name`.
   """
   @spec children(name()) ::
-          %{optional(term()) => pid()}
+          %{optional(term()) => {pid(), Supervisor.child_spec()}}
           | [{:undefined, pid() | :restarting, :worker | :supervisor, [module()] | :dynamic}]
   def children(name) do
     name

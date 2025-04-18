@@ -132,7 +132,7 @@ defmodule DistributedSupervisor.Registry do
 
     state =
       with %{children: %{}} <- state do
-        put_in(state, [:children, Access.key(group, %{}), winner], get_spec(state.name, winner))
+        put_in(state, [:children, group], {winner, get_spec(state.name, winner)})
       end
 
     {:noreply, state}
@@ -145,15 +145,13 @@ defmodule DistributedSupervisor.Registry do
     state =
       with %{children: %{}} <- state do
         new_state =
-          Map.update!(state, :children, fn %{^group => pids} = children ->
-            case Map.delete(pids, pid) do
-              map when map == %{} -> Map.delete(children, group)
-              map -> Map.put(children, group, map)
-            end
+          Map.update!(state, :children, fn
+            %{^group => {^pid, _spec}} = children -> Map.delete(children, group)
+            children -> children
           end)
 
         with true <- pid |> node() |> Node.connect() |> Kernel.!(),
-             %{} = spec <- get_in(state, [:children, group, pid]) do
+             {^pid, %{} = spec} <- get_in(state, [:children, group]) do
           DistributedSupervisor.do_start_child(
             state.name,
             spec,
