@@ -72,7 +72,6 @@ defmodule DistributedSupervisor.Registry do
       |> tap(&:persistent_term.put(name, &1))
 
     cache_children? = Map.fetch!(opts, :cache_children?)
-    # https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-1
 
     listeners =
       opts |> Map.fetch!(:listeners) |> List.wrap() |> Enum.filter(&Code.ensure_loaded?/1)
@@ -176,8 +175,8 @@ defmodule DistributedSupervisor.Registry do
     do: {:reply, HashRing.key_to_node(ring, key), state}
 
   @impl GenServer
-  def handle_call({:add_nodes, nodes}, _from, %{ring: ring} = state) do
-    {:reply,
+  def handle_cast({:add_nodes, nodes}, %{ring: ring} = state) do
+    {:noreply,
      %{
        state
        | ring:
@@ -232,6 +231,7 @@ defmodule DistributedSupervisor.Registry do
     |> GenServer.cast({up_down_terminate, listeners, name, {ring, node}, info})
   end
 
+  # https://www.erlang.org/docs/25/man/net_kernel#monitor_nodes-1
   defp do_monitor_nodes(false), do: :ok
   defp do_monitor_nodes(true), do: do_monitor_nodes(:all)
   defp do_monitor_nodes(kind), do: :net_kernel.monitor_nodes(true, node_type: kind)

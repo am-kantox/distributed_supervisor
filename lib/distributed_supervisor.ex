@@ -188,7 +188,9 @@ defmodule DistributedSupervisor do
 
   _See:_ `DynamicSupervisor.terminate_child/2`
   """
-  @spec terminate_child(name(), pid()) :: :ok | {:error, :not_found}
+  @spec terminate_child(name(), pid() | nil) :: :ok | {:error, :not_found}
+  def terminate_child(_name, nil), do: {:error, :not_found}
+
   def terminate_child(name, pid) do
     ds_name = dynamic_supervisor_name(name)
     me = node()
@@ -255,6 +257,20 @@ defmodule DistributedSupervisor do
   """
   @spec whereis(name(), id()) :: pid() | nil
   def whereis(name, child), do: DistributedSupervisor.Registry.whereis_name({name, child})
+
+  @doc """
+  Returns a registered name by a `t:pid()` given.
+
+  _See:_ `DistributedSupervisor.children/1`
+  """
+  @spec whois(name(), pid()) :: name() | nil
+  def whois(name, pid), do: name |> DistributedSupervisor.children() |> do_whois(pid)
+
+  defp do_whois(%{} = children, pid) do
+    with {name, {^pid, _}} <- Enum.find(children, &match?({_, {^pid, _}}, &1)), do: name
+  end
+
+  defp do_whois(_, _), do: nil
 
   @doc """
   A syntactic sugar for `GenServer.call/3` allowing to call a dynamically supervised
