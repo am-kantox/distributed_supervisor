@@ -130,12 +130,14 @@ defmodule DistributedSupervisor.Registry do
     winner = fix_group(state.name, state.scope, group, state.ring)
 
     state =
-      with %{children: %{}} <- state do
+      with winner when is_pid(winner) <- winner, %{children: %{}} <- state do
         put_in(state, [:children, group], {winner, get_spec(state.name, winner)})
       end
 
     {:noreply, state}
   end
+
+  def handle_info({_ref, :join, _group, _pids}, state), do: {:noreply, state}
 
   def handle_info({ref, :leave, group, [pid]}, %{ref: ref} = state) do
     Logger.debug("[🗒️] #{inspect(pid)} process left group #{inspect(group)}")
@@ -163,6 +165,8 @@ defmodule DistributedSupervisor.Registry do
 
     {:noreply, state}
   end
+
+  def handle_info({_ref, :leave, _group, _pids}, state), do: {:noreply, state}
 
   @impl GenServer
   def handle_call(:state, _from, state), do: {:reply, state, state}
@@ -251,7 +255,7 @@ defmodule DistributedSupervisor.Registry do
     end
   end
 
-  defp fix_group(_name, scope, group, _ring), do: scope |> :pg.get_members(group) |> hd()
+  defp fix_group(_name, scope, group, _ring), do: scope |> :pg.get_members(group) |> List.first()
 
   defp fix_loser(name, group, winner, loser) do
     Logger.warning(

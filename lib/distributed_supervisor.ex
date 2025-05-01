@@ -158,8 +158,13 @@ defmodule DistributedSupervisor do
     |> add_name_to_result(child_name)
   end
 
-  def start_child(name, {mod, opts}, node) when is_atom(mod),
-    do: start_child(name, %{id: Keyword.get(opts, name), start: {mod, :start_link, opts}}, node)
+  def start_child(name, {mod, opts}, node) when is_atom(mod) do
+    start_child(
+      name,
+      %{id: Keyword.get(opts, :name), start: {mod, :start_link, opts}},
+      node
+    )
+  end
 
   def start_child(name, mod, node) when is_atom(mod),
     do: start_child(name, {mod, []}, node)
