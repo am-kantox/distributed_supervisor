@@ -19,14 +19,7 @@ defmodule DistributedSupervisor.MixProject do
       docs: docs(),
       prune_code_paths: Mix.env() not in [:dev, :test],
       test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [
-        credo: :dev,
-        dialyzer: :dev,
-        tests: :test,
-        "coveralls.json": :test,
-        "coveralls.html": :test,
-        "quality.ci": :dev
-      ],
+      preferred_cli_env: [],
       releases: [],
       dialyzer: [
         plt_file: {:no_warn, ".dialyzer/dialyzer.plt"},
@@ -43,7 +36,17 @@ defmodule DistributedSupervisor.MixProject do
   end
 
   def cli do
-    [preferred_envs: [enfiladex: :test]]
+    [
+      preferred_envs: [
+        enfiladex: :test,
+        credo: :dev,
+        dialyzer: :dev,
+        tests: :test,
+        "coveralls.json": :test,
+        "coveralls.html": :test,
+        "quality.ci": :dev
+      ]
+    ]
   end
 
   defp deps do
@@ -52,7 +55,7 @@ defmodule DistributedSupervisor.MixProject do
       {:nimble_options_ex, "~> 0.1"},
       {:doctest_formatter, "~> 0.2", only: [:dev], runtime: false},
       {:enfiladex, "~> 0.2", only: [:dev, :test]},
-      {:excoveralls, "~> 0.14", only: [:test], runtime: false},
+      {:excoveralls, "~> 0.14", only: [:test]},
       {:credo, "~> 1.0", only: [:dev, :test]},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:mneme, "~> 0.6", only: [:dev, :test]},
