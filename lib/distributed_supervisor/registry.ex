@@ -244,6 +244,9 @@ defmodule DistributedSupervisor.Registry do
     winner_node = HashRing.key_to_node(ring, group)
 
     case :pg.get_members(scope, group) do
+      [] ->
+        nil
+
       [winner] ->
         winner
 

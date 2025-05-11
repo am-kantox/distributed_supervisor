@@ -42,6 +42,10 @@ defmodule DistributedSupervisor.MixProject do
     [extra_applications: []]
   end
 
+  def cli do
+    [preferred_envs: [enfiladex: :test]]
+  end
+
   defp deps do
     [
       {:libring, "~> 1.0"},
@@ -58,6 +62,8 @@ defmodule DistributedSupervisor.MixProject do
 
   defp aliases do
     [
+      test: ["test --exclude enfiladex"],
+      enfiladex: ["test --only enfiladex"],
       quality: ["format", "credo --strict", "dialyzer"],
       "quality.ci": [
         "format --check-formatted",

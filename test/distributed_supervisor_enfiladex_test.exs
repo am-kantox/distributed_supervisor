@@ -3,6 +3,8 @@ defmodule DistributedSupervisor.Enfiladex.Test do
 
   use Enfiladex.Suite
 
+  @moduletag :enfiladex
+
   alias DistributedSupervisor.Test.GenServer, as: GS
 
   setup do
