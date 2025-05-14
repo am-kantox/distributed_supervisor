@@ -7,6 +7,7 @@ defmodule DistributedSupervisor.MixProject do
   def project do
     [
       app: @app,
+      name: "Distr…visor",
       version: @version,
       elixir: "~> 1.14",
       compilers: compilers(Mix.env()),
@@ -102,7 +103,7 @@ defmodule DistributedSupervisor.MixProject do
       canonical: "http://hexdocs.pm/#{@app}",
       logo: "stuff/#{@app}-48x48.png",
       source_url: "https://github.com/am-kantox/#{@app}",
-      extras: ~w[README.md],
+      extras: ~w[README.md stuff/seemless-distribution.md LICENSE],
       groups_for_modules: [],
       groups_for_docs: [
         Interface: &(&1[:section] == :interface),
