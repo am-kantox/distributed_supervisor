@@ -59,7 +59,7 @@ defmodule DistributedSupervisor.MixProject do
       {:excoveralls, "~> 0.14", only: [:test]},
       {:credo, "~> 1.0", only: [:dev, :test]},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
-      {:mneme, "~> 0.6", only: [:dev, :test]},
+      # {:mneme, "~> 0.6", only: [:dev, :test]},
       {:ex_doc, ">= 0.0.0", only: [:dev]}
     ]
   end
